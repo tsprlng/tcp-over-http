@@ -1,6 +1,8 @@
 use crate::artex;
+use crate::auth;
 use crate::{ouroboros_impl_wrapper::WrapperBuilder, Artex};
 use actix_web::dev::Server;
+use actix_web::guard::GuardContext;
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
 use anyhow::anyhow;
 use futures::stream::TryStreamExt;
@@ -68,7 +70,14 @@ impl ExitSessionManager {
     }
 }
 
-#[get("/open")]
+fn _check_auth<'a>(ctx: &GuardContext<'a>) -> bool {
+    match ctx.head().headers().get(actix_web::http::header::AUTHORIZATION) {
+        None => false,
+        Some(auth) => { auth.to_str().is_ok_and(|val| val == auth::CORRECT_AUTH_HEADER.as_str() ) }
+    }
+}
+
+#[get("/open", guard="_check_auth")]
 async fn open(manager: web::Data<ExitSessionManager>) -> Vec<u8> {
     let stream = match TcpStream::connect(manager.target_addr.as_slice()).await {
         Ok(x) => x,
@@ -184,6 +193,7 @@ pub fn main(bind_addr: &[SocketAddr], target_addr: Vec<SocketAddr>) -> (Vec<Sock
     .unwrap();
     let bound = x.addrs();
     println!("Listening on {bound:?}");
+    println!("Correct auth: {}", auth::CORRECT_AUTH_HEADER.as_str());
     return (bound, x.run());
 }
 

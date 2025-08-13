@@ -18,6 +18,8 @@ use reqwest::Url;
 use std::{convert::Infallible, net::SocketAddr, str::FromStr};
 use tokio::net::lookup_host;
 
+mod auth;
+
 mod entry;
 mod exit;
 
