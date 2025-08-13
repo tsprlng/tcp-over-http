@@ -57,8 +57,8 @@ windows:
       layout: even-vertical
       panes:
         - postgres: sudo docker run -p 5432:5432 --rm -it -e POSTGRES_PASSWORD=password postgres
-        - entry: ./target/debug/tcp-over-http entry --target-url http://localhost:5443
-        - exit: ./target/debug/tcp-over-http exit --target-addr localhost:5432 --bind-addr localhost:5443
+        - entry: cargo +nightly run --bin tcp-over-http -- entry --target-url http://localhost:5443
+        - exit: cargo +nightly run --bin tcp-over-http -- exit --target-addr localhost:5432 --bind-addr localhost:5443
   #- postgres: sudo docker run -p 5432:5432 --rm -it -e POSTGRES_PASSWORD=password postgres
   #- entry: ./target/debug/tcp-over-http entry --target-url http://localhost:5443
   #- exit: ./target/debug/tcp-over-http exit --target-addr localhost:5432 --bind-addr localhost:5443
