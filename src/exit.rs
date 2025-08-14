@@ -132,6 +132,11 @@ async fn upload(
     };
 }
 
+#[get("/status")]
+async fn status() -> &'static str {
+    "ok\n"
+}
+
 #[get("/download/{uid_s}")]
 async fn download(
     manager: web::Data<ExitSessionManager>,
@@ -188,6 +193,7 @@ pub fn main(bind_addr: &[SocketAddr], target_addr: Vec<SocketAddr>) -> (Vec<Sock
             .service(upload)
             .service(download)
             .service(close)
+            .service(status)
     })
     .bind(bind_addr)
     .unwrap();
