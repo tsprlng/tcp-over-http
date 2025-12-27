@@ -16,7 +16,9 @@ use anyhow::anyhow;
 use clap::{Parser, Subcommand};
 use reqwest::Url;
 use std::{convert::Infallible, net::SocketAddr, str::FromStr};
+use std::error::Error;
 use tokio::net::lookup_host;
+use halfbrown::HashMap as Map;
 
 mod auth;
 
@@ -57,8 +59,11 @@ enum CommandMode {
         bind_addr: ResolveAddr,
 
         /// URL of the exit node.
-        #[clap(short, long, value_parser)]
+        #[clap(short='u', long, value_parser)]
         target_url: Url,
+
+        #[clap(short='t', long)]
+        target_id: String,
 
         /// Auth token.
         #[clap(short, long, value_parser)]
@@ -69,9 +74,26 @@ enum CommandMode {
         #[clap(short, long, value_parser, default_value = "localhost:8080")]
         bind_addr: ResolveAddr,
 
-        #[clap(short, long)]
-        target_addr: ResolveAddr,
+        #[arg(short = 't', long = "target", value_names = ["ID", "URL"], num_args = 2)]
+        raw_target_addresses: Vec<String>,
     },
+}
+
+impl CommandMode {
+    fn target_addresses(&self) -> Option<Map<String, ResolveAddr>> {
+        match self {
+            CommandMode::Exit { raw_target_addresses, .. } => {
+                let mut target_map = Map::new();
+                for chunk in raw_target_addresses.chunks(2) {
+                    if chunk.len() == 2 {
+                        target_map.insert(chunk[0].clone(), ResolveAddr(chunk[1].clone()));
+                    }
+                }
+                Some(target_map)
+            },
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -114,24 +136,33 @@ fn init_panic_hook() {
 async fn main() {
     init_panic_hook();
 
-    match CliArgs::parse().mode {
+    let mode = CliArgs::parse().mode;
+    match mode {
         CommandMode::Entry {
             bind_addr,
             target_url,
             auth,
+            target_id,
         } => {
-            entry::main(&bind_addr.resolve().await, target_url, auth)
+            entry::main(&bind_addr.resolve().await, target_url, auth, target_id)
                 .await
                 .1
                 .await;
         }
         CommandMode::Exit {
-            bind_addr,
-            target_addr,
-        } => exit::main(&bind_addr.resolve().await, target_addr.resolve().await)
-            .1
-            .await
-            .unwrap(),
+            ref bind_addr,
+            ref raw_target_addresses,
+        } => {
+            let resolve_addresses = mode.target_addresses().unwrap();
+            let mut target_addresses = Map::new();
+            for (id, addr) in resolve_addresses {
+                target_addresses.insert(id, addr.resolve().await);
+            }
+            exit::main(&bind_addr.clone().resolve().await, target_addresses)
+                .1
+                .await
+                .unwrap();
+        }
     }
 }
 

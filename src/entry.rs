@@ -28,8 +28,8 @@ async fn close_session(target: &Url, uid: Uuid) {
         .unwrap();
     assert_ok(resp).await;
 }
-async fn init_http_session(target: &Url, auth: &str) -> Trace<Uuid> {
-    let resp = CLIENT.get(join_url(target, ["open"])).header(reqwest::header::AUTHORIZATION, format!("Bearer {}", auth)).send().await.unwrap();
+async fn init_http_session(target: &Url, auth: &str, target_id: &str) -> Trace<Uuid> {
+    let resp = CLIENT.get(join_url(target, ["open/", target_id])).header(reqwest::header::AUTHORIZATION, format!("Bearer {}", auth)).send().await.unwrap();
     let resp = assert_ok(resp).await;
     return Ok(Uuid::from_bytes(
         match identity::<&[u8]>(&resp.bytes().await.unwrap()).try_into() {
@@ -72,8 +72,8 @@ async fn download_req(
     return resp.bytes_stream();
 }
 
-async fn process_socket(target_url: Arc<Url>, socket: tokio::net::TcpStream, auth_token: Arc<String>) -> Trace<Uuid> {
-    let uid = init_http_session(&target_url, &auth_token).await?;
+async fn process_socket(target_url: Arc<Url>, socket: tokio::net::TcpStream, auth_token: Arc<String>, target_id: String) -> Trace<Uuid> {
+    let uid = init_http_session(&target_url, &auth_token, &target_id).await?;
     println!("HTTP Server copies. Established session {uid:#x?}");
 
     let (s_read, mut s_write) = socket.into_split();
@@ -152,6 +152,7 @@ pub async fn main(
     bind_addr: &[SocketAddr],
     target_url: Url,
     auth_token: String,
+    target_id: String,
 ) -> (SocketAddr, impl Future<Output = Infallible>) {
     //console_subscriber::init();
     let listener_result = TcpListener::bind(bind_addr).await;
@@ -188,10 +189,11 @@ pub async fn main(
             let (socket, _) = listener.accept().await.unwrap();
             let target_url = target_url.clone();
             let auth_token = auth_token.clone();
+            let target_id = target_id.clone();
             let _join_handle = tokio::spawn(async move {
                 #[cfg(test)]
                 AC.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                drop(dbg!(process_socket(target_url, socket, auth_token).await));
+                drop(dbg!(process_socket(target_url, socket, auth_token, target_id).await));
                 #[cfg(test)]
                 AC.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
             });

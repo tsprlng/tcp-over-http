@@ -3,10 +3,11 @@ use crate::auth;
 use crate::{ouroboros_impl_wrapper::WrapperBuilder, Artex};
 use actix_web::dev::Server;
 use actix_web::guard::GuardContext;
-use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
+use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder, ResponseError};
 use anyhow::anyhow;
 use futures::stream::TryStreamExt;
 use halfbrown::HashMap as Map;
+use std::io;
 use std::net::SocketAddr;
 use stream_cancel::{Trigger, Valve};
 use tokio::{net::TcpStream, sync::RwLock};
@@ -57,16 +58,20 @@ impl ExitSession {
 
 #[derive(Debug)]
 pub(crate) struct ExitSessionManager {
-    target_addr: Vec<SocketAddr>,
+    target_addresses: Map<String, Vec<SocketAddr>>,
     pub(crate) sessions: RwLock<Map<Uuid, ExitSession>>,
 }
 
 impl ExitSessionManager {
-    fn new(target_addr: Vec<SocketAddr>) -> Self {
+    fn new(target_addresses: Map<String, Vec<SocketAddr>>) -> Self {
         Self {
-            target_addr,
+            target_addresses,
             sessions: tokio::sync::RwLock::new(Map::new()),
         }
+    }
+
+    fn target_addr_for_id(&self, target_id: &str) -> Option<Vec<SocketAddr>> {
+        self.target_addresses.get(target_id).cloned()
     }
 }
 
@@ -77,20 +82,24 @@ fn _check_auth<'a>(ctx: &GuardContext<'a>) -> bool {
     }
 }
 
-#[get("/open", guard="_check_auth")]
-async fn open(manager: web::Data<ExitSessionManager>) -> Vec<u8> {
-    let stream = match TcpStream::connect(manager.target_addr.as_slice()).await {
+#[get("/open/{target_id}", guard="_check_auth")]
+async fn open(manager: web::Data<ExitSessionManager>, target_id: web::Path<String>) -> Result<Vec<u8>, impl ResponseError> {
+    let target_addr = match manager.target_addr_for_id(&target_id) {
+        Some(addr) => addr,
+        None => return Err(io::Error::new(io::ErrorKind::NotFound, "Not Found")),
+    };
+    let stream = match TcpStream::connect(target_addr.as_slice()).await {
         Ok(x) => x,
         Err(x) => {
             dbg!(x, "couldnt connect to target");
             //signal
-            return vec![];
+            return Ok(vec![]);
         }
     };
     let uid = Uuid::new_v4();
     let mut guard = manager.sessions.write().await;
     guard.insert(uid, ExitSession::new(stream));
-    return uid.into_bytes().to_vec();
+    return Ok(uid.into_bytes().to_vec());
 }
 
 #[post("/upload/{uid_s}")]
@@ -179,8 +188,8 @@ async fn close(manager: web::Data<ExitSessionManager>, uid_s: web::Path<String>)
     HttpResponse::Ok()
 }
 
-pub fn main(bind_addr: &[SocketAddr], target_addr: Vec<SocketAddr>) -> (Vec<SocketAddr>, Server) {
-    let session_manager = web::Data::new(ExitSessionManager::new(target_addr));
+pub fn main(bind_addr: &[SocketAddr], target_addresses: Map<String, Vec<SocketAddr>>) -> (Vec<SocketAddr>, Server) {
+    let session_manager = web::Data::new(ExitSessionManager::new(target_addresses));
     #[cfg(test)]
     {
         *test::ARC.try_lock().unwrap() = Some(session_manager.clone());
