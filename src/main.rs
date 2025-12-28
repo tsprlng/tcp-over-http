@@ -60,8 +60,9 @@ enum CommandMode {
 
         /// URL of the exit node.
         #[clap(short='u', long, value_parser)]
-        target_url: Url,
+        exit_url: Url,
 
+        /// Which of the available targets to select.
         #[clap(short='t', long)]
         target_id: String,
 
@@ -74,7 +75,8 @@ enum CommandMode {
         #[clap(short, long, value_parser, default_value = "localhost:8080")]
         bind_addr: ResolveAddr,
 
-        #[arg(short = 't', long = "target", value_names = ["ID", "URL"], num_args = 2)]
+        /// Map the given target ID to a TCP host/port (can be multiple)
+        #[arg(short = 't', long = "target", required = true, value_names = ["ID", "URL"], num_args = 2)]
         raw_target_addresses: Vec<String>,
     },
 }
@@ -140,11 +142,11 @@ async fn main() {
     match mode {
         CommandMode::Entry {
             bind_addr,
-            target_url,
+            exit_url,
             auth,
             target_id,
         } => {
-            entry::main(&bind_addr.resolve().await, target_url, auth, target_id)
+            entry::main(&bind_addr.resolve().await, exit_url, auth, target_id)
                 .await
                 .1
                 .await;
